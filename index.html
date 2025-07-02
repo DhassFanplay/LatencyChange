@@ -39,16 +39,22 @@
             display: none;
         }
     </style>
-    <button onclick="toggleTemplatePreview()" style="position:fixed;top:10px;right:10px;z-index:9999;">Toggle Template Preview</button>
-<div id="templatePreviewContainer" style="display:none;position:fixed;bottom:50px;left:10px;z-index:9999;background:rgba(0,0,0,0.7);padding:10px;border-radius:8px;max-height:200px;overflow-x:auto;white-space:nowrap;">
-</div>
-
+    
     <div id="debugLog" style="position:fixed;bottom:0;left:0;width:100%;background:#000;color:#0f0;font-size:12px;padding:5px;z-index:9999;font-family:monospace;"></div>
 
     <div id="footHighlight"></div>
 
     <div id="unity-container" class="unity-desktop">
         <canvas id="unity-canvas" width="960" height="600" tabindex="-1"> </canvas>
+        <!-- Template Preview Canvas Section -->
+<div style="width:100%;text-align:center;margin-top:5px;">
+    <label style="color:white">
+        <input type="checkbox" id="togglePreview" onchange="toggleTemplateCanvas()" />
+        Show Template Previews
+    </label>
+</div>
+<canvas id="templateCanvas" width="960" height="100" style="display:none;background:#111;border-top:1px solid #888;"></canvas>
+
         <div id="unity-loading-bar">
             <div id="unity-logo"> </div>
             <div id="unity-progress-bar-empty">
