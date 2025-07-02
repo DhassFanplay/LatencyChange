@@ -143,38 +143,6 @@ async function setupCamera() {
 
     startFrameLoop();
 }
-function toggleTemplateCanvas() {
-    showPreviews = document.getElementById("togglePreview").checked;
-    const canvas = document.getElementById("templateCanvas");
-    canvas.style.display = showPreviews ? "block" : "none";
-    if (showPreviews) renderTemplatePreviews();
-}
-function renderTemplatePreviews() {
-    const canvas = document.getElementById("templateCanvas");
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const size = 64;
-    const spacing = 8;
-
-    templates.forEach((templateObj, index) => {
-        const tempMat = templateObj.template;
-        const previewCanvas = document.createElement("canvas");
-        previewCanvas.width = templateSize;
-        previewCanvas.height = templateSize;
-        const previewCtx = previewCanvas.getContext("2d");
-
-        const imgData = new ImageData(
-            new Uint8ClampedArray(tempMat.data),
-            templateSize,
-            templateSize
-        );
-        previewCtx.putImageData(imgData, 0, 0);
-
-        // Resize to 64px image for display
-        ctx.drawImage(previewCanvas, index * (size + spacing), 10, size, size);
-    });
-}
 function downloadTemplates() {
     templates.forEach((t, index) => {
         const imgData = new ImageData(new Uint8ClampedArray(t.template.data), t.template.cols, t.template.rows);
@@ -223,9 +191,6 @@ function CaptureFootTemplateFromUnity() {
     });
 
     console.log(`Template ${templates.length} captured.`);
-if (showPreviews) {
-    renderTemplatePreviews();
-}
 
     if (templates.length >= maxTemplates) {
         const footBox = document.getElementById("footHighlight");
