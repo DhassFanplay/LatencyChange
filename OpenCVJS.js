@@ -175,6 +175,25 @@ function renderTemplatePreviews() {
         ctx.drawImage(previewCanvas, index * (size + spacing), 10, size, size);
     });
 }
+function downloadTemplates() {
+    templates.forEach((t, index) => {
+        const imgData = new ImageData(new Uint8ClampedArray(t.template.data), t.template.cols, t.template.rows);
+        const offCanvas = document.createElement("canvas");
+        offCanvas.width = t.template.cols;
+        offCanvas.height = t.template.rows;
+        const offCtx = offCanvas.getContext("2d");
+        offCtx.putImageData(imgData, 0, 0);
+
+        offCanvas.toBlob(blob => {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `foot_template_${index + 1}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }, 'image/png');
+    });
+}
 
 
 function CaptureFootTemplateFromUnity() {
