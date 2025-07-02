@@ -16,7 +16,7 @@ const scale = 0.5;
 const baseMatchScore = 0.75;
 const lowConfidenceThreshold = 0.65;
 const verticalOffset = 0.125;
-const maxTemplates = 8;
+const maxTemplates = 5;
 
 let trackingLost = false;
 let trackingLostFrames = 0;
@@ -193,7 +193,7 @@ function autoCaptureTemplates() {
             CaptureFootTemplateFromUnity();
             count++;
         }
-    }, 300);
+    }, 100);
 }
 
 function startFrameLoop() {
