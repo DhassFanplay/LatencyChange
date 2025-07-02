@@ -174,6 +174,10 @@ function CaptureFootTemplateFromUnity() {
     if (templates.length >= maxTemplates) {
         const footBox = document.getElementById("footHighlight");
         if (footBox) footBox.style.display = "none";
+        if (unityInstance) {
+            unityInstance.SendMessage("CameraManager", "OnTemplatesCaptured");
+            console.log("Unity notified: Templates Captured");
+        }
         startFootDetectionLoop();
     }
 }
