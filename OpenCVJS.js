@@ -15,7 +15,7 @@ let templateSize = 100;
 const scale = 0.5;
 const baseMatchScore = 0.7;
 const lowConfidenceThreshold = 0.5;
-const verticalOffset = 0.1;
+const verticalOffset = 0.15;
 const maxTemplates = 8;
 
 let trackingLost = false;
