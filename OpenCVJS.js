@@ -13,25 +13,28 @@ let matchBuffer = null;
 
 let templateSize = 100;
 const scale = 0.5;
-const baseMatchScore = 0.7;
-const lowConfidenceThreshold = 0.5;
-const verticalOffset = 0.15;
-const maxTemplates = 8;
-
-let trackingLost = false;
-let trackingLostFrames = 0;
-const trackingLostThreshold = 10;
+const minMatchScore = 0.75;
+const verticalOffset = 0.2;
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
 }
-
 window.RegisterUnityInstance = RegisterUnityInstance;
 window.StartFootDetection = StartFootDetection;
 window.CaptureFootTemplateFromUnity = CaptureFootTemplateFromUnity;
 window.listCameras = listCameras;
 window.setupCamera = setupCamera;
 window.Recalibration = Recalibration;
+window.StartFootDetectionManually = StartFootDetectionManually;
+
+const templatePreviewContainer = document.getElementById("templatePreviewContainer");
+const toggleTemplatePreview = document.getElementById("toggleTemplatePreview");
+
+if (toggleTemplatePreview) {
+    toggleTemplatePreview.addEventListener("change", () => {
+        templatePreviewContainer.style.display = toggleTemplatePreview.checked ? "flex" : "none";
+    });
+}
 
 async function listCameras() {
     await StartFootDetection();
@@ -48,16 +51,18 @@ async function StartFootDetection() {
 async function Recalibration() {
     const footBox = document.getElementById("footHighlight");
     footBox.style.display = "block";
-    templates.forEach(t => {
-        t.template.delete();
-        t.resizedTemplate.delete();
-    });
-    templates.length = 0;
-    trackingLost = false;
-    trackingLostFrames = 0;
-    console.log("Templates cleared. Starting auto-capture...");
+    if (templates.length >= 2) {
+        templates.forEach(t => {
+            t.template.delete();
+            t.resizedTemplate.delete();
+        });
+        templates.length = 0;
+        console.log("Old templates cleared.");
+    }
 
-    autoCaptureTemplates();
+    if (templatePreviewContainer) {
+        templatePreviewContainer.innerHTML = "";
+    }
 }
 
 async function setupCamera() {
@@ -118,7 +123,6 @@ async function setupCamera() {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-
     templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
     log(`Template size set to ${templateSize}px.`);
 
@@ -129,7 +133,6 @@ async function setupCamera() {
         footBox.style.width = `${templateSize}px`;
         footBox.style.height = `${templateSize}px`;
         footBox.style.display = "block";
-
         footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
         footBox.style.top = `${(screenHeight - templateSize) / 2 + screenHeight * verticalOffset}px`;
     }
@@ -169,31 +172,31 @@ function CaptureFootTemplateFromUnity() {
         resizedTemplate: resized
     });
 
+    if (toggleTemplatePreview?.checked && templatePreviewContainer) {
+        const preview = document.createElement("canvas");
+        preview.width = templateSize;
+        preview.height = templateSize;
+        const ctxPreview = preview.getContext("2d");
+        ctxPreview.putImageData(imageData, 0, 0);
+
+        preview.style.width = "80px";
+        preview.style.height = "80px";
+        preview.style.margin = "5px";
+        preview.style.border = "1px solid white";
+        preview.style.borderRadius = "5px";
+        templatePreviewContainer.appendChild(preview);
+    }
+
     console.log(`Template ${templates.length} captured.`);
 
-    if (templates.length >= maxTemplates) {
+    if (templates.length === 2) {
         const footBox = document.getElementById("footHighlight");
         if (footBox) footBox.style.display = "none";
+
         if (unityInstance) {
             unityInstance.SendMessage("CameraManager", "OnTemplatesCaptured");
-            console.log("Unity notified: Templates Captured");
         }
-        startFootDetectionLoop();
     }
-}
-
-function autoCaptureTemplates() {
-    let count = 0;
-    const interval = setInterval(() => {
-        if (count >= maxTemplates) {
-            clearInterval(interval);
-            log("Auto-capture complete.");
-            startFootDetectionLoop();
-        } else {
-            CaptureFootTemplateFromUnity();
-            count++;
-        }
-    }, 250);
 }
 
 function startFrameLoop() {
@@ -257,11 +260,7 @@ function startFootDetectionLoop() {
             result.delete();
         }
 
-        let currentThreshold = trackingLostFrames > trackingLostThreshold ? lowConfidenceThreshold : baseMatchScore;
-
-        if (bestMatch.score > currentThreshold) {
-            trackingLostFrames = 0;
-
+        if (bestMatch.score > minMatchScore) {
             const centerX = (bestMatch.pt.x + bestMatch.templateSize.width / 2) / scale;
             const centerY = (bestMatch.pt.y + bestMatch.templateSize.height / 2) / scale;
 
@@ -273,19 +272,9 @@ function startFootDetectionLoop() {
             if (unityInstance) {
                 unityInstance.SendMessage("FootCube", "OnReceiveFootPosition", JSON.stringify(normalized));
             }
-
-            if (trackingLost) {
-                trackingLost = false;
-                if (unityInstance) unityInstance.SendMessage("FootCube", "OnTrackingRecovered");
-                log("Tracking recovered");
-            }
-
         } else {
-            trackingLostFrames++;
-            if (!trackingLost && trackingLostFrames >= trackingLostThreshold) {
-                trackingLost = true;
-                if (unityInstance) unityInstance.SendMessage("FootCube", "OnTrackingLost");
-                log("Tracking lost");
+            if (unityInstance) {
+                unityInstance.SendMessage("FootCube", "OnTrackingLost");
             }
         }
 
@@ -294,6 +283,13 @@ function startFootDetectionLoop() {
     }
 
     detect();
+}
+
+function StartFootDetectionManually() {
+    startFootDetectionLoop();
+    if (unityInstance) {
+        unityInstance.SendMessage("CameraManager", "AILoaded");
+    }
 }
 
 function cancelLoops() {
