@@ -13,10 +13,10 @@ let matchBuffer = null;
 
 let templateSize = 100;
 const scale = 0.5;
-const baseMatchScore = 0.75;
-const lowConfidenceThreshold = 0.65;
-const verticalOffset = 0.125;
-const maxTemplates = 5;
+const baseMatchScore = 0.7;
+const lowConfidenceThreshold = 0.5;
+const verticalOffset = 0.1;
+const maxTemplates = 8;
 
 let trackingLost = false;
 let trackingLostFrames = 0;
@@ -193,7 +193,7 @@ function autoCaptureTemplates() {
             CaptureFootTemplateFromUnity();
             count++;
         }
-    }, 100);
+    }, 250);
 }
 
 function startFrameLoop() {
