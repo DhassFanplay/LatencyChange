@@ -143,26 +143,6 @@ async function setupCamera() {
 
     startFrameLoop();
 }
-function downloadTemplates() {
-    templates.forEach((t, index) => {
-        const imgData = new ImageData(new Uint8ClampedArray(t.template.data), t.template.cols, t.template.rows);
-        const offCanvas = document.createElement("canvas");
-        offCanvas.width = t.template.cols;
-        offCanvas.height = t.template.rows;
-        const offCtx = offCanvas.getContext("2d");
-        offCtx.putImageData(imgData, 0, 0);
-
-        offCanvas.toBlob(blob => {
-            const link = document.createElement("a");
-            link.href = URL.createObjectURL(blob);
-            link.download = `foot_template_${index + 1}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }, 'image/png');
-    });
-}
-
 
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
@@ -189,6 +169,18 @@ function CaptureFootTemplateFromUnity() {
         template: newTemplate,
         resizedTemplate: resized
     });
+
+    // Send the preview to Unity
+    const previewCanvas = document.createElement("canvas");
+    previewCanvas.width = templateSize;
+    previewCanvas.height = templateSize;
+    const previewCtx = previewCanvas.getContext("2d");
+    previewCtx.putImageData(imageData, 0, 0);
+    const base64Preview = previewCanvas.toDataURL("image/png");
+
+    if (unityInstance) {
+        unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Preview);
+    }
 
     console.log(`Template ${templates.length} captured.`);
 
