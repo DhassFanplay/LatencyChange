@@ -160,27 +160,41 @@ function CaptureFootTemplateFromUnity() {
 
     const imageData = tempCtx.getImageData(startX, startY, templateSize, templateSize);
     const newTemplate = cv.matFromImageData(imageData);
-    cv.cvtColor(newTemplate, newTemplate, cv.COLOR_RGBA2GRAY);
 
+    // Convert to grayscale
+    const gray = new cv.Mat();
+    cv.cvtColor(newTemplate, gray, cv.COLOR_RGBA2GRAY);
+
+    // Resize to small scale
     const resized = new cv.Mat();
-    cv.resize(newTemplate, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
+    cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
+    // Store it for tracking
     templates.push({
-        template: newTemplate,
+        template: gray,
         resizedTemplate: resized
     });
 
-    // Send the preview to Unity
-    const previewCanvas = document.createElement("canvas");
-    previewCanvas.width = templateSize;
-    previewCanvas.height = templateSize;
-    const previewCtx = previewCanvas.getContext("2d");
-    previewCtx.putImageData(imageData, 0, 0);
-    const base64Preview = previewCanvas.toDataURL("image/png");
+    // Send processed image (grayscale, resized) to Unity
+    const processedCanvas = document.createElement("canvas");
+    processedCanvas.width = resized.cols;
+    processedCanvas.height = resized.rows;
+    const processedCtx = processedCanvas.getContext("2d");
 
+    // Convert back to RGBA for canvas
+    const rgbaMat = new cv.Mat();
+    cv.cvtColor(resized, rgbaMat, cv.COLOR_GRAY2RGBA);
+    const imgData = new ImageData(
+        new Uint8ClampedArray(rgbaMat.data), resized.cols, resized.rows
+    );
+    processedCtx.putImageData(imgData, 0, 0);
+
+    const base64Processed = processedCanvas.toDataURL("image/png");
     if (unityInstance) {
-        unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Preview);
+        unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Processed);
     }
+
+    rgbaMat.delete(); newTemplate.delete();
 
     console.log(`Template ${templates.length} captured.`);
 
@@ -194,6 +208,7 @@ function CaptureFootTemplateFromUnity() {
         startFootDetectionLoop();
     }
 }
+
 
 function autoCaptureTemplates() {
     let count = 0;
