@@ -39,6 +39,8 @@ async function StartFootDetection() {
     cancelLoops();
     await waitForOpenCV();
     console.log("OpenCV Loaded");
+        bgSubtractor = cv.createBackgroundSubtractorMOG2();
+    console.log("Background subtractor initialized.");
     await setupCamera();
 }
 
@@ -339,6 +341,5 @@ function waitForOpenCV() {
     return new Promise(resolve => {
         const check = () => (cv && cv.Mat ? resolve() : setTimeout(check, 100));
         check();
-        bgSubtractor = cv.createBackgroundSubtractorMOG2();
     });
 }
