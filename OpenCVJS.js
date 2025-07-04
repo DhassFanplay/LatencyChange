@@ -18,7 +18,6 @@ let trackingLostFrames = 0;
 const trackingLostThreshold = 10;
 
 // Background subtractor for removing static background
-let bgSubtractor = cv.createBackgroundSubtractorMOG2();
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
@@ -41,6 +40,7 @@ async function StartFootDetection() {
     console.log("OpenCV Loaded");
     await setupCamera();
 }
+let bgSubtractor = cv.createBackgroundSubtractorMOG2();
 
 async function Recalibration() {
     const footBox = document.getElementById("footHighlight");
