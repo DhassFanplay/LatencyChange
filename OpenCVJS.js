@@ -309,7 +309,6 @@ function startFootDetectionLoop() {
                 console.log("Tracking lost");
             }
         }
-
         fgMask.delete();
         detectLoopId = requestAnimationFrame(detect);
     }
