@@ -4,25 +4,29 @@ let video = null;
 let canvas = null;
 let ctx = null;
 let firstFrameSent = false;
+
 let frameLoopId = null;
 let detectLoopId = null;
+
 let templates = [];
+let matchBuffer = null;
+
 let templateSize = 100;
 const scale = 0.5;
 const baseMatchScore = 0.8;
 const lowConfidenceThreshold = 0.65;
 const verticalOffset = 0.15;
 const maxTemplates = 8;
+
 let trackingLost = false;
 let trackingLostFrames = 0;
 const trackingLostThreshold = 10;
-let bgSubtractor = null;
-
-// Background subtractor for removing static background
+let showPreviews = false;
 
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
 }
+
 window.RegisterUnityInstance = RegisterUnityInstance;
 window.StartFootDetection = StartFootDetection;
 window.CaptureFootTemplateFromUnity = CaptureFootTemplateFromUnity;
@@ -39,8 +43,6 @@ async function StartFootDetection() {
     cancelLoops();
     await waitForOpenCV();
     console.log("OpenCV Loaded");
-        bgSubtractor = cv.createBackgroundSubtractorMOG2();
-    console.log("Background subtractor initialized.");
     await setupCamera();
 }
 
@@ -55,15 +57,18 @@ async function Recalibration() {
     trackingLost = false;
     trackingLostFrames = 0;
     console.log("Templates cleared. Starting auto-capture...");
+
     autoCaptureTemplates();
 }
 
 async function setupCamera() {
-    console.log("Setting up camera...");
+    log("Setting up camera...");
+
     if (video?.srcObject) {
         video.srcObject.getTracks().forEach(track => track.stop());
         video.srcObject = null;
     }
+
     if (!video) {
         video = document.createElement("video");
         video.setAttribute("autoplay", "");
@@ -74,16 +79,18 @@ async function setupCamera() {
     }
 
     const constraints = {
-        video: { facingMode: { ideal: "environment" } },
+        video: {
+            facingMode: { ideal: "environment" }
+        },
         audio: false
     };
 
     let stream;
     try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);
-        console.log("Camera stream obtained.");
+        log("Camera stream obtained.");
     } catch (e) {
-        console.error(`getUserMedia failed: ${e.name} - ${e.message}`);
+        log(`getUserMedia failed: ${e.name} - ${e.message}`);
         return;
     }
 
@@ -97,9 +104,9 @@ async function setupCamera() {
                 video.play().then(resolve).catch(reject);
             };
         });
-        console.log("Video metadata loaded.");
+        log("Video metadata loaded.");
     } catch (e) {
-        console.error(`Video play error: ${e}`);
+        log(`Video play error: ${e}`);
         return;
     }
 
@@ -112,8 +119,9 @@ async function setupCamera() {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
+
     templateSize = Math.floor(Math.min(video.videoWidth, video.videoHeight) * 0.35);
-    console.log(`Template size set to ${templateSize}px.`);
+    log(`Template size set to ${templateSize}px.`);
 
     const footBox = document.getElementById("footHighlight");
     if (footBox) {
@@ -122,6 +130,7 @@ async function setupCamera() {
         footBox.style.width = `${templateSize}px`;
         footBox.style.height = `${templateSize}px`;
         footBox.style.display = "block";
+
         footBox.style.left = `${(screenWidth - templateSize) / 2}px`;
         footBox.style.top = `${(screenHeight - templateSize) / 2 + screenHeight * verticalOffset}px`;
     }
@@ -129,7 +138,7 @@ async function setupCamera() {
     if (!firstFrameSent && unityInstance) {
         unityInstance.SendMessage("CameraManager", "OnCameraReady");
         firstFrameSent = true;
-        console.log("Unity notified: Camera ready.");
+        log("Unity notified: Camera ready.");
     }
 
     startFrameLoop();
@@ -138,43 +147,35 @@ async function setupCamera() {
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
 
-    // Step 1: Capture the current frame
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = video.videoWidth;
     tempCanvas.height = video.videoHeight;
     const tempCtx = tempCanvas.getContext("2d");
-    tempCtx.drawImage(video, 0, 0);
 
-    // Step 2: Define the region of interest (ROI) for the foot
+    tempCtx.drawImage(video, 0, 0);
     const centerX = Math.floor(video.videoWidth / 2);
     const centerY = Math.floor(video.videoHeight / 2 + video.videoHeight * verticalOffset);
     const startX = centerX - templateSize / 2;
     const startY = centerY - templateSize / 2;
 
-    // Step 3: Apply background subtraction to isolate the foot
-    const fgMask = new cv.Mat();
-    bgSubtractor.apply(tempCtx.getImageData(0, 0, video.videoWidth, video.videoHeight), fgMask);
+    const imageData = tempCtx.getImageData(startX, startY, templateSize, templateSize);
+    const newTemplate = cv.matFromImageData(imageData);
 
-    // Step 4: Extract the ROI from the foreground mask
-    const roiImageData = fgMask.getRegion(startX, startY, templateSize, templateSize);
-    const newTemplate = cv.matFromImageData(roiImageData);
-
-    // Step 5: Convert to grayscale and apply Gaussian blur
+    // Convert to grayscale
     const gray = new cv.Mat();
     cv.cvtColor(newTemplate, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
 
-    // Step 6: Resize the template for efficient matching
+    // Resize to small scale
     const resized = new cv.Mat();
     cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
-    // Step 7: Store the template
+    // Store it for tracking
     templates.push({
         template: gray,
         resizedTemplate: resized
     });
 
-    // Step 8: Send the processed template to Unity
+    // Send processed image (grayscale, resized) to Unity
     const processedCanvas = document.createElement("canvas");
     processedCanvas.width = resized.cols;
     processedCanvas.height = resized.rows;
@@ -184,16 +185,11 @@ function CaptureFootTemplateFromUnity() {
     const rgbaMat = new cv.Mat();
     cv.cvtColor(resized, rgbaMat, cv.COLOR_GRAY2RGBA);
     const imgData = new ImageData(
-        new Uint8ClampedArray(rgbaMat.data),
-        resized.cols,
-        resized.rows
+        new Uint8ClampedArray(rgbaMat.data), resized.cols, resized.rows
     );
     processedCtx.putImageData(imgData, 0, 0);
+
     const base64Processed = processedCanvas.toDataURL("image/png");
-
-    const filename = `foot_template_${templates.length}.png`;
-    triggerDownload(base64Processed, filename);
-
     if (unityInstance) {
         unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Processed);
     }
@@ -201,6 +197,7 @@ function CaptureFootTemplateFromUnity() {
     rgbaMat.delete(); newTemplate.delete();
 
     console.log(`Template ${templates.length} captured.`);
+
     if (templates.length >= maxTemplates) {
         const footBox = document.getElementById("footHighlight");
         if (footBox) footBox.style.display = "none";
@@ -212,21 +209,13 @@ function CaptureFootTemplateFromUnity() {
     }
 }
 
-function triggerDownload(dataURL, filename) {
-    const link = document.createElement("a");
-    link.href = dataURL;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
 
 function autoCaptureTemplates() {
     let count = 0;
     const interval = setInterval(() => {
         if (count >= maxTemplates) {
             clearInterval(interval);
-            console.log("Auto-capture complete.");
+            log("Auto-capture complete.");
             startFootDetectionLoop();
         } else {
             CaptureFootTemplateFromUnity();
@@ -245,8 +234,8 @@ function startFrameLoop() {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const base64 = canvas.toDataURL("image/jpeg");
 
+        const base64 = canvas.toDataURL("image/jpeg");
         if (unityInstance) {
             unityInstance.SendMessage("CameraManager", "OnReceiveVideoFrame", base64);
             if (!firstFrameSent) {
@@ -270,7 +259,6 @@ function startFootDetectionLoop() {
         ctx.drawImage(video, 0, 0);
         const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const src = cv.matFromImageData(frameData);
-
         const gray = new cv.Mat();
         const resized = new cv.Mat();
 
@@ -285,6 +273,7 @@ function startFootDetectionLoop() {
             cv.matchTemplate(resized, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
             const minMax = cv.minMaxLoc(result);
             const score = minMax.maxVal;
+
             if (score > bestMatch.score) {
                 bestMatch = {
                     score,
@@ -292,6 +281,7 @@ function startFootDetectionLoop() {
                     templateSize: resizedTemplate.size()
                 };
             }
+
             result.delete();
         }
 
@@ -299,8 +289,10 @@ function startFootDetectionLoop() {
 
         if (bestMatch.score > currentThreshold) {
             trackingLostFrames = 0;
+
             const centerX = (bestMatch.pt.x + bestMatch.templateSize.width / 2) / scale;
             const centerY = (bestMatch.pt.y + bestMatch.templateSize.height / 2) / scale;
+
             const normalized = {
                 x: centerX / canvas.width,
                 y: centerY / canvas.height
@@ -313,20 +305,22 @@ function startFootDetectionLoop() {
             if (trackingLost) {
                 trackingLost = false;
                 if (unityInstance) unityInstance.SendMessage("FootCube", "OnTrackingRecovered");
-                console.log("Tracking recovered");
+                log("Tracking recovered");
             }
+
         } else {
             trackingLostFrames++;
             if (!trackingLost && trackingLostFrames >= trackingLostThreshold) {
                 trackingLost = true;
                 if (unityInstance) unityInstance.SendMessage("FootCube", "OnTrackingLost");
-                console.log("Tracking lost");
+                log("Tracking lost");
             }
         }
 
         src.delete(); gray.delete(); resized.delete();
         detectLoopId = requestAnimationFrame(detect);
     }
+
     detect();
 }
 
@@ -335,6 +329,12 @@ function cancelLoops() {
     if (detectLoopId) cancelAnimationFrame(detectLoopId);
     frameLoopId = null;
     detectLoopId = null;
+}
+
+function log(msg) {
+    console.log(msg);
+    const dbg = document.getElementById("debugLog");
+    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
 }
 
 function waitForOpenCV() {
