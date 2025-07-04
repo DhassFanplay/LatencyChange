@@ -57,7 +57,6 @@ async function Recalibration() {
     trackingLost = false;
     trackingLostFrames = 0;
     console.log("Templates cleared. Starting auto-capture...");
-
     autoCaptureTemplates();
 }
 
@@ -79,9 +78,7 @@ async function setupCamera() {
     }
 
     const constraints = {
-        video: {
-            facingMode: { ideal: "environment" }
-        },
+        video: { facingMode: { ideal: "environment" } },
         audio: false
     };
 
@@ -161,27 +158,24 @@ function CaptureFootTemplateFromUnity() {
     const imageData = tempCtx.getImageData(startX, startY, templateSize, templateSize);
     const newTemplate = cv.matFromImageData(imageData);
 
-    // Convert to grayscale
     const gray = new cv.Mat();
     cv.cvtColor(newTemplate, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+    cv.Canny(gray, gray, 50, 150); // 🆕 Edge-based shape extraction
 
-    // Resize to small scale
     const resized = new cv.Mat();
     cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
-    // Store it for tracking
     templates.push({
         template: gray,
         resizedTemplate: resized
     });
 
-    // Send processed image (grayscale, resized) to Unity
     const processedCanvas = document.createElement("canvas");
     processedCanvas.width = resized.cols;
     processedCanvas.height = resized.rows;
     const processedCtx = processedCanvas.getContext("2d");
 
-    // Convert back to RGBA for canvas
     const rgbaMat = new cv.Mat();
     cv.cvtColor(resized, rgbaMat, cv.COLOR_GRAY2RGBA);
     const imgData = new ImageData(
@@ -208,7 +202,6 @@ function CaptureFootTemplateFromUnity() {
         startFootDetectionLoop();
     }
 }
-
 
 function autoCaptureTemplates() {
     let count = 0;
@@ -264,6 +257,7 @@ function startFootDetectionLoop() {
 
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+        cv.Canny(gray, gray, 50, 150); // 🆕 Edge detection on live frame
         cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
         let bestMatch = { score: 0, pt: null, templateSize: null };
