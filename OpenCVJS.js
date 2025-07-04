@@ -16,6 +16,7 @@ const maxTemplates = 8;
 let trackingLost = false;
 let trackingLostFrames = 0;
 const trackingLostThreshold = 10;
+let bgSubtractor = null;
 
 // Background subtractor for removing static background
 
@@ -40,7 +41,6 @@ async function StartFootDetection() {
     console.log("OpenCV Loaded");
     await setupCamera();
 }
-let bgSubtractor = cv.createBackgroundSubtractorMOG2();
 
 async function Recalibration() {
     const footBox = document.getElementById("footHighlight");
@@ -136,35 +136,43 @@ async function setupCamera() {
 function CaptureFootTemplateFromUnity() {
     if (!video || video.videoWidth === 0 || video.videoHeight === 0) return;
 
+    // Step 1: Capture the current frame
     const tempCanvas = document.createElement("canvas");
     tempCanvas.width = video.videoWidth;
     tempCanvas.height = video.videoHeight;
     const tempCtx = tempCanvas.getContext("2d");
     tempCtx.drawImage(video, 0, 0);
 
+    // Step 2: Define the region of interest (ROI) for the foot
     const centerX = Math.floor(video.videoWidth / 2);
     const centerY = Math.floor(video.videoHeight / 2 + video.videoHeight * verticalOffset);
     const startX = centerX - templateSize / 2;
     const startY = centerY - templateSize / 2;
 
-    const imageData = tempCtx.getImageData(startX, startY, templateSize, templateSize);
-    const newTemplate = cv.matFromImageData(imageData);
+    // Step 3: Apply background subtraction to isolate the foot
+    const fgMask = new cv.Mat();
+    bgSubtractor.apply(tempCtx.getImageData(0, 0, video.videoWidth, video.videoHeight), fgMask);
 
-    // Convert to grayscale
+    // Step 4: Extract the ROI from the foreground mask
+    const roiImageData = fgMask.getRegion(startX, startY, templateSize, templateSize);
+    const newTemplate = cv.matFromImageData(roiImageData);
+
+    // Step 5: Convert to grayscale and apply Gaussian blur
     const gray = new cv.Mat();
     cv.cvtColor(newTemplate, gray, cv.COLOR_RGBA2GRAY);
+    cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
 
-    // Resize to small scale
+    // Step 6: Resize the template for efficient matching
     const resized = new cv.Mat();
     cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
 
-    // Store it for tracking
+    // Step 7: Store the template
     templates.push({
         template: gray,
         resizedTemplate: resized
     });
 
-    // Send processed image (grayscale, resized) to Unity
+    // Step 8: Send the processed template to Unity
     const processedCanvas = document.createElement("canvas");
     processedCanvas.width = resized.cols;
     processedCanvas.height = resized.rows;
@@ -188,8 +196,7 @@ function CaptureFootTemplateFromUnity() {
         unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Processed);
     }
 
-    rgbaMat.delete();
-    newTemplate.delete();
+    rgbaMat.delete(); newTemplate.delete();
 
     console.log(`Template ${templates.length} captured.`);
     if (templates.length >= maxTemplates) {
@@ -258,16 +265,22 @@ function startFootDetectionLoop() {
             return;
         }
 
-        // Apply background subtraction
-        const fgMask = new cv.Mat();
-        bgSubtractor.apply(frame, fgMask);
+        ctx.drawImage(video, 0, 0);
+        const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const src = cv.matFromImageData(frameData);
 
-        // Perform template matching on the foreground
+        const gray = new cv.Mat();
+        const resized = new cv.Mat();
+
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+        cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
+
         let bestMatch = { score: 0, pt: null, templateSize: null };
 
         for (let { resizedTemplate } of templates) {
             const result = new cv.Mat();
-            cv.matchTemplate(fgMask, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
+            cv.matchTemplate(resized, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
             const minMax = cv.minMaxLoc(result);
             const score = minMax.maxVal;
             if (score > bestMatch.score) {
@@ -280,7 +293,6 @@ function startFootDetectionLoop() {
             result.delete();
         }
 
-        // Dynamic threshold adjustment
         let currentThreshold = trackingLostFrames > trackingLostThreshold ? lowConfidenceThreshold : baseMatchScore;
 
         if (bestMatch.score > currentThreshold) {
@@ -309,7 +321,8 @@ function startFootDetectionLoop() {
                 console.log("Tracking lost");
             }
         }
-        fgMask.delete();
+
+        src.delete(); gray.delete(); resized.delete();
         detectLoopId = requestAnimationFrame(detect);
     }
     detect();
@@ -326,5 +339,6 @@ function waitForOpenCV() {
     return new Promise(resolve => {
         const check = () => (cv && cv.Mat ? resolve() : setTimeout(check, 100));
         check();
+        bgSubtractor = cv.createBackgroundSubtractorMOG2();
     });
 }
