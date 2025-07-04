@@ -17,6 +17,9 @@ let trackingLost = false;
 let trackingLostFrames = 0;
 const trackingLostThreshold = 10;
 
+// Background subtractor for removing static background
+let bgSubtractor = cv.createBackgroundSubtractorMOG2();
+
 function RegisterUnityInstance(instance) {
     unityInstance = instance;
 }
@@ -170,7 +173,11 @@ function CaptureFootTemplateFromUnity() {
     // Convert back to RGBA for canvas
     const rgbaMat = new cv.Mat();
     cv.cvtColor(resized, rgbaMat, cv.COLOR_GRAY2RGBA);
-    const imgData = new ImageData(new Uint8ClampedArray(rgbaMat.data), resized.cols, resized.rows);
+    const imgData = new ImageData(
+        new Uint8ClampedArray(rgbaMat.data),
+        resized.cols,
+        resized.rows
+    );
     processedCtx.putImageData(imgData, 0, 0);
     const base64Processed = processedCanvas.toDataURL("image/png");
 
@@ -181,7 +188,8 @@ function CaptureFootTemplateFromUnity() {
         unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Processed);
     }
 
-    rgbaMat.delete(); newTemplate.delete();
+    rgbaMat.delete();
+    newTemplate.delete();
 
     console.log(`Template ${templates.length} captured.`);
     if (templates.length >= maxTemplates) {
@@ -250,22 +258,16 @@ function startFootDetectionLoop() {
             return;
         }
 
-        ctx.drawImage(video, 0, 0);
-        const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const src = cv.matFromImageData(frameData);
+        // Apply background subtraction
+        const fgMask = new cv.Mat();
+        bgSubtractor.apply(frame, fgMask);
 
-        const gray = new cv.Mat();
-        const resized = new cv.Mat();
-
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
-        cv.resize(gray, resized, new cv.Size(0, 0), scale, scale, cv.INTER_AREA);
-
+        // Perform template matching on the foreground
         let bestMatch = { score: 0, pt: null, templateSize: null };
 
         for (let { resizedTemplate } of templates) {
             const result = new cv.Mat();
-            cv.matchTemplate(resized, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
+            cv.matchTemplate(fgMask, resizedTemplate, result, cv.TM_CCOEFF_NORMED);
             const minMax = cv.minMaxLoc(result);
             const score = minMax.maxVal;
             if (score > bestMatch.score) {
@@ -278,6 +280,7 @@ function startFootDetectionLoop() {
             result.delete();
         }
 
+        // Dynamic threshold adjustment
         let currentThreshold = trackingLostFrames > trackingLostThreshold ? lowConfidenceThreshold : baseMatchScore;
 
         if (bestMatch.score > currentThreshold) {
@@ -307,7 +310,7 @@ function startFootDetectionLoop() {
             }
         }
 
-        src.delete(); gray.delete(); resized.delete();
+        fgMask.delete();
         detectLoopId = requestAnimationFrame(detect);
     }
     detect();
@@ -318,12 +321,6 @@ function cancelLoops() {
     if (detectLoopId) cancelAnimationFrame(detectLoopId);
     frameLoopId = null;
     detectLoopId = null;
-}
-
-function log(msg) {
-    console.log(msg);
-    const dbg = document.getElementById("debugLog");
-    if (dbg) dbg.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
 }
 
 function waitForOpenCV() {
