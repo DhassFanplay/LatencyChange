@@ -190,6 +190,9 @@ function CaptureFootTemplateFromUnity() {
     processedCtx.putImageData(imgData, 0, 0);
 
     const base64Processed = processedCanvas.toDataURL("image/png");
+
+    const filename = `foot_template_${templates.length}.png`;
+    triggerDownload(base64Processed, filename);
     if (unityInstance) {
         unityInstance.SendMessage("CameraManager", "OnReceiveTemplateImage", base64Processed);
     }
@@ -209,6 +212,14 @@ function CaptureFootTemplateFromUnity() {
     }
 }
 
+function triggerDownload(dataURL, filename) {
+    const link = document.createElement("a");
+    link.href = dataURL;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 
 function autoCaptureTemplates() {
     let count = 0;
